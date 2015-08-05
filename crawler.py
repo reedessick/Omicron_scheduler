@@ -22,7 +22,7 @@ from optparse import OptionParser
 #=================================================
 
 ### list of known versions of Omicron, only add to this list if we have the functionality to support that version of Omicron
-known_versions = ["v1r3"]
+known_versions = "v1r3 v2r1".split()
 
 #=================================================
 def __safe_fork(cmd, stdin=None, stdout=None, stderr=None):
@@ -244,11 +244,13 @@ def check_seg(seg, window=None):
 
 	
 ###
-def str_omicron_config_v1e3(framecache, channels, samplefrequency=4096, chunkduration=32, blockduration=32, overlapduration=4, windows=[2,4], fftplan="ESTIMATE", frequencyrange=[32,2048], qrange=[3,141], mismatch=0.2, snrthreshold=5.5, nmax=1e6, clustering="time", outputdir="./", format=["xml"], verbosity=0, writepsd=0, writetimeseries=0, writewhiteneddata=0, plotstyle="GWOLLUM"):
+def str_omicron_config_v1e3(framecache, channels, samplefrequency=4096, chunkduration=32, blockduration=32, overlapduration=4, windows=[2,4], fftplan="ESTIMATE", frequencyrange=[32,2048], qrange=[3,141], mismatch=0.2, snrthreshold=5.5, nmax=None, clustering="time", outputdir="./", format=["xml"], verbosity=0, writepsd=0, writetimeseries=0, writewhiteneddata=0, plotstyle="GWOLLUM"):
 	"""
 	builds the string that represents the omicron parameter file
 	WARNING: may be sub-optimal if required extremely repetitively because of the way we concatenate strings
 		(strings are immutable in python, so we create many objects)
+
+	intended for Omicron v1r3
 	"""
 	s = ""
 
@@ -271,7 +273,8 @@ def str_omicron_config_v1e3(framecache, channels, samplefrequency=4096, chunkdur
 
 	### triggers
 	s += "TRIGGER\tSNRTHRESHOLD\t%.4f\n"%snrthreshold
-	s += "TRIGGER\tNMAX\t%d\n"%int(nmax)
+	if nmax != None:
+		s += "TRIGGER\tNMAX\t%d\n"%int(nmax)
 	s += "TRIGGER\tCLUSTERING\t%s\n"%clustering
 
 	### output
@@ -286,7 +289,50 @@ def str_omicron_config_v1e3(framecache, channels, samplefrequency=4096, chunkdur
 	return s
 
 ###
-def str_omicron_sub(universe, executable, arguments, log, output, error, getenv=True, notification="never"):
+def str_omicron_config_v2r1(framecache, channels, samplefrequency=4096, chunkduration=32, segmentduration=32, overlapduration=4, frequencyrange=[32,2048], qrange=[3,141], mismatch=0.2, snrthreshold=5.5,  outputdir="./", products="triggers", verbosity=0, format=["xml"], clustering="TIME", nmax=None, plotstyle="GWOLLUM"):
+	"""
+	builds the string that represents the omicron parameter file
+	WARNING: may be sub-optimal if required extremly repetitively because of the way we concatenate strings
+		(strings are immutable in python, so we create many object)
+
+	intended for Omicron v2r1
+	"""
+	s = ""
+
+	### data
+	s += "DATA\tFFL\t%s\n"%framecache
+	for chan in channels.keys():
+		s += "DATA\tCHANNELS\t%s\n"%chan
+
+	s += "DATA\tSAMPLEFREQUENCY\t%d\n"%samplefrequency
+
+	### parameters
+	s += "PARAMETER\tCHUNKDURATION\t%d\n"%chunkduration
+	s += "PARAMETER\tSEGMENTDURATION\t%d\n"%segmentduration
+	s += "PARAMETER\tOVERLAPDURATION\t%s\n"%overlapduration
+	s += "PARAMETER\tFREQUENCYRANGE\t%.4f\t%.4f\n"%tuple(frequencyrange)
+	s += "PARAMETER\tQRANGE\t%.4f\t%.4f\n"%tuple(qrange)
+	s += "PARAMETER\tMISMATCHMAX\t%.4f\n"%mismatch
+	s += "PARAMETER\tSNRTHRESHOLD\t%.4f\n"%snrthreshold
+	s += "PARAMETER\tCLUSTERING\t%s\n"%clustering
+	s += "PARAMETER\tTILEDOWN\t0\n" ### never use tiledown... don't know what the "tiledown algorithm" is
+	s += "PARAMETER\tSNRSCALE\t50\n" ### upper ylimit for plots we don't produce...
+
+	### triggers
+
+	### output
+	s += "OUTPUT\tDIRECTORY\t%s\n"%outputdir
+	s += "OUTPUT\tPRODUCTS\t%s\n"%products
+	s += "OUTPUT\tVERBOSITY\t%d\n"%verbosity
+	s += "OUTPUT\tFORMAT\t%s\n"%(",".join(format))
+	if nmax != None:
+		s += "OUTPUT\tNTRIGGERMAX\t%d\n"%int(nmax)
+	s += "OUTPUT\tSTYLE\t%s\n"%plotstyle
+
+	return s
+
+###
+def str_omicron_sub(universe, executable, arguments, log, output, error, getenv=True, notification="never", accounting_group=None, accounting_group_user=None):
 	"""
 	builds a string that represents a condor sub file for omicron
 	"""
@@ -300,6 +346,10 @@ def str_omicron_sub(universe, executable, arguments, log, output, error, getenv=
 	s += "output       = %s\n"%output
 	s += "error        = %s\n"%error
 	s += "notification = %s\n"%notification
+	if accounting_group:
+		s += "accounting_group = %s\n"%accounting_group
+	if accounting_group_user:
+		s += "accounting_group_user = %s\n"%accounting_group_user
 	s += "queue 1\n"
 
 	return s
@@ -379,6 +429,17 @@ max_wait = config.getint("general", "max_wait")
 ### pull out omicron run parameters
 block = config.getboolean("omicron", "block") ### whether to block
 condor = config.getboolean("omicron", "condor") ### whether to use condor
+
+if condor:
+	if config.has_option("omicron", "accounting_group"):
+		accounting_group = config.get("omicron", "accounting_group")
+	else:
+		accounting_group = None
+	if config.has_option("omicron", "accounting_group_user"):
+		accounting_group_user = config.get("omicron", "accounting_group_user")
+	else:
+		accounting_group_user = None
+
 scisegs = config.getboolean("omicron","scisegs") ### whether to use scisegs
 executable = config.get("omicron", "executable")
 
@@ -443,7 +504,7 @@ sciseg_bitmask = config.getint("scisegs","bitmask")
 report("setting up template omicron params file for version : %s"%version, opts.verbose)
 if version == "v1r3":
 	params_string = str_omicron_config_v1e3(
-		"%s", # will be filled in later
+		"%s", # will be filled in later with framecache
 		channels, 
 		samplefrequency=samplefrequency, 
 		chunkduration=chunkduration, 
@@ -457,7 +518,7 @@ if version == "v1r3":
 		snrthreshold=snrthreshold, 
 		nmax=nmax, 
 		clustering=clustering, 
-		outputdir="%s",  # will be filled in later
+		outputdir="%s",  # will be filled in later with outputdir
 		format=format, 
 		verbosity=verbosity, 
 		writepsd=writepsd, 
@@ -465,6 +526,32 @@ if version == "v1r3":
 		writewhiteneddata=writewhiteneddata,
 		plotstyle=plotstyle
 		)
+
+	print "\n\n\tWARNING: not all v1r3 parameters are set. You may need to fix this...\n"
+
+elif version == "v2r1":
+	params_string = str_omicron_config_v2r1(
+		"%s", # will be filled in later with framecache 
+		channels, 
+		samplefrequency=samplefrequency, 
+		chunkduration=chunkduration, 
+		segmentduration=blockduration, 
+		overlapduration=overlapduration, 
+		frequencyrange=frequencyrange, 
+		qrange=qrange, 
+		mismatch=mismatch, 
+		snrthreshold=snrthreshold,  
+		products="triggers", 
+		verbosity=verbosity, 
+		format=format, 
+		clustering=clustering,
+		outputdir="%s", # will be filled in later with outputdir
+		nmax=nmax, 
+		plotstyle=plotstyle
+		)
+
+	print "\n\n\tWARNING: not all v2r1 parameters are set, and not all v1r3 parameters are used in v2r1. You may need to fix this...\n"
+
 else:
 	raise ValueError("do not know how to set up Omicron params file for version : %s"%version)
 
@@ -474,7 +561,7 @@ if condor:
 
 	### write sub template
 	report("building sub template", opts.verbose)
-	sub_string = str_omicron_sub("vanilla", executable, ["%s", "%s"], "%s", "%s", "%s", getenv=True, notification="never")
+	sub_string = str_omicron_sub("vanilla", executable, ["%s", "%s"], "%s", "%s", "%s", getenv=True, notification="never", accounting_group=accounting_group, accounting_group_user=accounting_group_user)
 
 #=================================================
 
@@ -601,8 +688,8 @@ while t < opts.gps_end:
 			cmd = "%s %s %s"%(executable, segfile, params)
 			report(cmd, opts.verbose)
 
-			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, stride+twopadding)
-			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, stride+twopadding)
+			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, duration+twopadding)
+			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, duration+twopadding)
 
 			report("out: %s"%out, opts.verbose)
 			report("err: %s"%err, opts.verbose)
@@ -616,11 +703,11 @@ while t < opts.gps_end:
 			p.wait() ### block!
 			
 		elif condor: ### run under condor
-			log = "%s/%s_%d-%d.log"%(logdir, ifo, t-padding, stride+twopadding)
-			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, stride+twopadding)
-			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, stride+twopadding)
+			log = "%s/%s_%d-%d.log"%(logdir, ifo, t-padding, duration+twopadding)
+			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, duration+twopadding)
+			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, duration+twopadding)
 			
-			sub = "%s/%s_%d-%d.sub"%(condordir, ifo, t, stride)
+			sub = "%s/%s_%d-%d.sub"%(condordir, ifo, t-padding, duration+twopadding)
 
 			report("sub: %s"%sub, opts.verbose)
 			report("log: %s"%log, opts.verbose)
@@ -640,8 +727,8 @@ while t < opts.gps_end:
 			p.wait()
 
 		else: ### run from here but do not block
-			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, stride+twopadding)
-			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, stride+twopadding)
+			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, duration+twopadding)
+			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, duration+twopadding)
 			cmd = "%s %s %s"%(executable, segfile, params)
 			report(cmd, opts.verbose)
 			report("out: %s"%out, opts.verbose)
