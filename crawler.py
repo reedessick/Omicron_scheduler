@@ -205,13 +205,44 @@ def extract_scisegs(frames, channel, bitmask, start, stride):
 		if seg1[1] == seg2[0]:
 			seg1[1] = seg2[1] ### join the segments
 		else:
-			segs.append( list(seg1) )
+			### check segment for sanity
+			append_seg = check_seg( seg1, (start, start+stride) )
+			if append_seg:
+				segs.append( append_seg )
 			seg1 = seg2
-	segs.append( list(seg1) )
+	append_seg = check_seg( seg1, (start, start+stride) )
+	if append_seg:
+    		segs.append( append_seg )
 
 	### return final list of lists!
 	return segs
 
+###
+def check_seg(seg, window=None):
+	"""
+	ensures segment makes sense
+	if provided, segment is sliced so that we only keep the part that interesects with window=[start, end]
+	"""
+	s, e = seg
+	if window:
+		start, end = window
+		if s < start:
+			s = start # truncate the start of seg
+		elif not (s < end):
+			return False # no overlap between current segment and window
+		if e > end:
+			e = end # truncate the end of seg
+		elif not (e > start):
+			return False # no overlap between currnet segment and window
+
+	if s < e:
+		return [s,e]
+	elif s > e:
+		raise ValueError("something is very wrong with segment generation... seg[1]=%.3f < seg[0]=%.3f"%tuple(seg))
+	else:
+		return False
+
+	
 ###
 def str_omicron_config_v1e3(framecache, channels, samplefrequency=4096, chunkduration=32, blockduration=32, overlapduration=4, windows=[2,4], fftplan="ESTIMATE", frequencyrange=[32,2048], qrange=[3,141], mismatch=0.2, snrthreshold=5.5, nmax=1e6, clustering="time", outputdir="./", format=["xml"], verbosity=0, writepsd=0, writetimeseries=0, writewhiteneddata=0, plotstyle="GWOLLUM"):
 	"""
@@ -339,6 +370,7 @@ outputdir = config.get("general", "outputdir")
 stride = config.getint("general", "stride")
 delay = config.getint("general", "delay")
 padding = config.getint("general", "padding")
+twopadding = 2*padding
 
 max_wait = config.getint("general", "max_wait")
 
@@ -463,7 +495,7 @@ while t < opts.gps_end:
 
 	### wait to analyze this stride
 	nowgps = float( gpstime.gps_time_now() )
-	wait = (t+stride+padding) + delay - nowgps 
+	wait = (t+duration+padding) + delay - nowgps 
 	if wait > 0:
 		report("sleeping for %d sec"%wait, opts.verbose)
 		time.sleep(wait)
@@ -490,9 +522,9 @@ while t < opts.gps_end:
 #	frames = find_frames(ldr_server, ldr_url_type, ldr_type, ifo, t-padding, stride+2*padding, verbose=opts.verbose) 
 #	covered = coverage( frames, t-padding, stride+2*padding) ### find out the coverage
 	if opts.shared_mem:
-		frames = shm_find_frames(shmdir, ifo, ldr_type, t-padding, duration+2*padding, verbose=opts.verbose)
+		frames = shm_find_frames(shmdir, ifo, ldr_type, t-padding, duration+twopadding, verbose=opts.verbose)
 	else:
-		frames = ldr_find_frames(ldr_server, ldr_url_type, ldr_type, ifo, t-padding, duration+2*padding, verbose=opts.verbose) 
+		frames = ldr_find_frames(ldr_server, ldr_url_type, ldr_type, ifo, t-padding, duration+twopadding, verbose=opts.verbose) 
 
 	covered = coverage( frames, t-padding, duration+2*padding) ### find out the coverage
 
@@ -500,7 +532,8 @@ while t < opts.gps_end:
 	if covered < 1.0:
 		report("coverage = %.5f < 1.0, we'll check every second for more frames and wait at most %d seconds before proceeding."%(covered, max_wait), opts.verbose)
 
-	while (covered < 1.0) and ( (float(gpstime.gps_time_now()) - ( (t+stride+padding) + delay ) ) < max_wait ):
+#	while (covered < 1.0) and ( (float(gpstime.gps_time_now()) - ( (t+stride+padding) + delay ) ) < max_wait ):
+	while (covered < 1.0) and ( (float(gpstime.gps_time_now()) - ( (t+duration+twopadding) + delay ) ) < max_wait ):
 
 		###
 		time.sleep( 1 ) # don't break the file system
@@ -509,10 +542,10 @@ while t < opts.gps_end:
 #		frames = find_frames(ldr_server, ldr_url_type, ldr_type, ifo, t-padding, stride+2*padding, verbose=False) ### don't report this every time in the loop
 #		covered = coverage( frames, t-padding, stride+2*padding) ### find out the coverage
 		if opts.shared_mem:
-			frames = shm_find_frames(shmdir, ifo, ldr_type, t-padding, duration+2*padding, verbose=opts.verbose)
+			frames = shm_find_frames(shmdir, ifo, ldr_type, t-padding, duration+twopadding, verbose=opts.verbose)
 		else:
-			frames = ldr_find_frames(ldr_server, ldr_url_type, ldr_type, ifo, t-padding, duration+2*padding, verbose=False) ### don't report this every time in the loop
-		covered = coverage( frames, t-padding, duration+2*padding) ### find out the coverage
+			frames = ldr_find_frames(ldr_server, ldr_url_type, ldr_type, ifo, t-padding, duration+twopadding, verbose=False) ### don't report this every time in the loop
+		covered = coverage( frames, t-padding, duration+twopadding) ### find out the coverage
 
 		if covered >= 1.0:
 			report("covered >= 1.0", opts.verbose)
@@ -521,7 +554,8 @@ while t < opts.gps_end:
 		report("coverage = %.5f < 1.0, but we've timed out after waiting at least %d seconds."%(covered, max_wait), opts.verbose)
 
 	### write framecache
-	framecache = "%s/%s_%d-%d.lcf"%(framedir, ifo, t, stride)
+#	framecache = "%s/%s_%d-%d.lcf"%(framedir, ifo, t, stride)
+	framecache = "%s/%s_%d-%d.lcf"%(framedir, ifo, t-padding, duration+twopadding)
 	report("writing framecache : %s"%framecache, opts.verbose)
 
 	framecache_obj = open(framecache, "w")
@@ -534,16 +568,17 @@ while t < opts.gps_end:
 
 	else:
 		### find scisegs
-		segfile = "%s/%s_%d-%d.seg"%(segdir, ifo, t, stride)
+#		segfile = "%s/%s_%d-%d.seg"%(segdir, ifo, t, stride)
+		segfile = "%s/%s_%d-%d.seg"%(segdir, ifo, t-padding, duration+twopadding)
 		if scisegs: ### extract from ODC vector in frames
 			report("extracting scisegs to : %s"%(segfile), opts.verbose)
-#			segs = extract_scisegs(frames, "%s1:%s"%(ifo, sciseg_channel), sciseg_bitmask, t-padding, t+stride+padding)
-			segs = extract_scisegs(frames, "%s1:%s"%(ifo, sciseg_channel), sciseg_bitmask, t-padding, t+duration+padding)
+#			segs = extract_scisegs(frames, "%s1:%s"%(ifo, sciseg_channel), sciseg_bitmask, t-padding, stride+twopadding)
+			segs = extract_scisegs(frames, "%s1:%s"%(ifo, sciseg_channel), sciseg_bitmask, t-padding, duration+twopadding)
 
 		else: ### use entire segment for analysis
 			report("using analysis segment as scisegs", opts.verbose)
-#			segs = [(t-padding, t+stride+padding)]
-			segs = [(t-padding, t+duration+padding)]
+#			segs = [(t-padding, t+stride+twopadding)]
+			segs = [(t-padding, t+duration+twopadding)]
 
 		report("writing scisegs : %s"%segfile, opts.verbose)
 		file_obj = open(segfile, "w")
@@ -552,7 +587,8 @@ while t < opts.gps_end:
 		file_obj.close()
 
 		### write omicron params file
-		params = "%s/%s_%d-%d.params"%(logdir, ifo, t, stride)
+#		params = "%s/%s_%d-%d.params"%(logdir, ifo, t, stride)
+		params = "%s/%s_%d-%d.params"%(logdir, ifo, t-padding, duration+twopadding)
 		report("writing params : %s"%params, opts.verbose)
 
 		file_obj = open(params, 'w')
@@ -565,8 +601,8 @@ while t < opts.gps_end:
 			cmd = "%s %s %s"%(executable, segfile, params)
 			report(cmd, opts.verbose)
 
-			out = "%s/%s_%d-%d.out"%(logdir, ifo, t, stride)
-			err = "%s/%s_%d-%d.err"%(logdir, ifo, t, stride)
+			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, stride+twopadding)
+			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, stride+twopadding)
 
 			report("out: %s"%out, opts.verbose)
 			report("err: %s"%err, opts.verbose)
@@ -580,9 +616,9 @@ while t < opts.gps_end:
 			p.wait() ### block!
 			
 		elif condor: ### run under condor
-			log = "%s/%s_%d-%d.log"%(logdir, ifo, t, stride)
-			out = "%s/%s_%d-%d.out"%(logdir, ifo, t, stride)
-			err = "%s/%s_%d-%d.err"%(logdir, ifo, t, stride)
+			log = "%s/%s_%d-%d.log"%(logdir, ifo, t-padding, stride+twopadding)
+			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, stride+twopadding)
+			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, stride+twopadding)
 			
 			sub = "%s/%s_%d-%d.sub"%(condordir, ifo, t, stride)
 
@@ -604,8 +640,8 @@ while t < opts.gps_end:
 			p.wait()
 
 		else: ### run from here but do not block
-			out = "%s/%s_%d-%d.out"%(logdir, ifo, t, stride)
-			err = "%s/%s_%d-%d.err"%(logdir, ifo, t, stride)
+			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, stride+twopadding)
+			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, stride+twopadding)
 			cmd = "%s %s %s"%(executable, segfile, params)
 			report(cmd, opts.verbose)
 			report("out: %s"%out, opts.verbose)
