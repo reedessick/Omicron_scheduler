@@ -20,6 +20,11 @@ from ConfigParser import SafeConfigParser
 from optparse import OptionParser
 
 #=================================================
+
+### list of known versions of Omicron, only add to this list if we have the functionality to support that version of Omicron
+known_versions = ["v1r3"]
+
+#=================================================
 def __safe_fork(cmd, stdin=None, stdout=None, stderr=None):
 	"""
 	helper for a double fork. This is called by multiprocessing to orphan the actual processes
@@ -208,7 +213,7 @@ def extract_scisegs(frames, channel, bitmask, start, stride):
 	return segs
 
 ###
-def str_omicron_config(framecache, channels, samplefrequency=4096, chunkduration=32, blockduration=32, overlapduration=4, windows=[2,4], fftplan="ESTIMATE", frequencyrange=[32,2048], qrange=[3,141], mismatch=0.2, snrthreshold=5.5, nmax=1e6, clustering="time", outputdir="./", format=["xml"], verbosity=0, writepsd=0, writetimeseries=0, writewhiteneddata=0, plotstyle="GWOLLUM"):
+def str_omicron_config_v1e3(framecache, channels, samplefrequency=4096, chunkduration=32, blockduration=32, overlapduration=4, windows=[2,4], fftplan="ESTIMATE", frequencyrange=[32,2048], qrange=[3,141], mismatch=0.2, snrthreshold=5.5, nmax=1e6, clustering="time", outputdir="./", format=["xml"], verbosity=0, writepsd=0, writetimeseries=0, writewhiteneddata=0, plotstyle="GWOLLUM"):
 	"""
 	builds the string that represents the omicron parameter file
 	WARNING: may be sub-optimal if required extremely repetitively because of the way we concatenate strings
@@ -345,6 +350,13 @@ condor = config.getboolean("omicron", "condor") ### whether to use condor
 scisegs = config.getboolean("omicron","scisegs") ### whether to use scisegs
 executable = config.get("omicron", "executable")
 
+version = config.get("omicron", "version")
+### ensure we know how to handle this version
+if version not in known_versions:
+    raise ValueError("do not know how to launch Omicron processes with version : %s"%version)
+report("running Omicron : %s"%version, opts.verbose)
+
+
 ### run parameters
 samplefrequency = config.getint("omicron","samplefrequency")
 chunkduration = config.getint("omicron","chunkduration")
@@ -396,30 +408,33 @@ sciseg_bitmask = config.getint("scisegs","bitmask")
 #=================================================
 
 ### set up params template
-report("setting up template omicron params file", opts.verbose)
-params_string = str_omicron_config(
-	"%s", # will be filled in later
-	channels, 
-	samplefrequency=samplefrequency, 
-	chunkduration=chunkduration, 
-	blockduration=blockduration, 
-	overlapduration=overlapduration, 
-	windows=windows,
-	fftplan=fftplan,
-	frequencyrange=frequencyrange,
-	qrange=qrange, 
-	mismatch=mismatch, 
-	snrthreshold=snrthreshold, 
-	nmax=nmax, 
-	clustering=clustering, 
-	outputdir="%s",  # will be filled in later
-	format=format, 
-	verbosity=verbosity, 
-	writepsd=writepsd, 
-	writetimeseries=writetimeseries, 
-	writewhiteneddata=writewhiteneddata,
-	plotstyle=plotstyle
-	)
+report("setting up template omicron params file for version : %s"%version, opts.verbose)
+if version == "v1r3":
+	params_string = str_omicron_config_v1e3(
+		"%s", # will be filled in later
+		channels, 
+		samplefrequency=samplefrequency, 
+		chunkduration=chunkduration, 
+		blockduration=blockduration, 
+		overlapduration=overlapduration, 
+		windows=windows,
+		fftplan=fftplan,
+		frequencyrange=frequencyrange,
+		qrange=qrange, 
+		mismatch=mismatch, 
+		snrthreshold=snrthreshold, 
+		nmax=nmax, 
+		clustering=clustering, 
+		outputdir="%s",  # will be filled in later
+		format=format, 
+		verbosity=verbosity, 
+		writepsd=writepsd, 
+		writetimeseries=writetimeseries, 
+		writewhiteneddata=writewhiteneddata,
+		plotstyle=plotstyle
+		)
+else:
+	raise ValueError("do not know how to set up Omicron params file for version : %s"%version)
 
 ### set up condor files if needed
 if condor:
