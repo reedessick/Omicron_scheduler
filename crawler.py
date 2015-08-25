@@ -364,6 +364,8 @@ parser.add_option("-e", "--gps-end", default=np.infty, type="float")
 
 parser.add_option("", "--shared-mem", default=False, action="store_true", help="find frames in the shared memory partition rather than through ligo_data_find")
 
+parser.add_option("", "--no-robot-cert", default=False, action="store_true", help="do not use robot cert specified in config file")
+
 opts, args = parser.parse_args()
 
 if len(args) != 1:
@@ -411,6 +413,15 @@ for reason, script in config.items("environment"):
 	if 0 != p.returncode:
 		raise StandardError("failed to source %s"%script)
 
+### robot cert
+if not opts.no_robot_cert:
+	if os.environ.has_key("X509_USER_PROXY"):
+		del os.environ['X509_USER_PROXY']
+
+	### set cert and key
+	os.environ['X509_USER_CERT'] = config.get('robot cert', 'robot_certificate')
+	os.environ['X509_USER_KEY'] = config.get('robot cert', 'robot_key')
+
 #=================================================
 report("pulling out parameters from : %s"%configfile, opts.verbose)
 
@@ -449,35 +460,6 @@ if version not in known_versions:
     raise ValueError("do not know how to launch Omicron processes with version : %s"%version)
 report("running Omicron : %s"%version, opts.verbose)
 
-
-### run parameters
-samplefrequency = config.getint("omicron","samplefrequency")
-chunkduration = config.getint("omicron","chunkduration")
-blockduration = config.getint("omicron","blockduration")
-overlapduration = config.getint("omicron","overlapduration")
-windows = eval(config.get("omicron","windows"))
-fftplan = config.get("omicron","fftplan")
-
-frequencyrange = eval(config.get("omicron","frequencyrange"))
-qrange = eval(config.get("omicron","qrange"))
-mismatch = config.getfloat("omicron","mismatch")
-snrthreshold = config.getfloat("omicron","snrthreshold")
-nmax = config.getint("omicron","nmax")
-clustering = config.get("omicron","clustering")
-
-### output formatting
-format = eval(config.get("omicron","format"))
-verbosity = config.getint("omicron","verbosity")
-writepsd = config.getint("omicron","writepsd")
-writetimeseries = config.getint("omicron","writetimeseries")
-writewhiteneddata = config.getint("omicron","writewhiteneddata")
-plotstyle = config.get("omicron","plotstyle")
-
-### channels
-channels = dict( ("%s1:%s"%(ifo,key.upper()), float(value)) for key, value in config.items("channels") )
-
-duration = max(chunkduration, blockduration)
-
 #========================
 
 if opts.shared_mem:
@@ -500,60 +482,96 @@ sciseg_bitmask = config.getint("scisegs","bitmask")
 
 #=================================================
 
-### set up params template
-report("setting up template omicron params file for version : %s"%version, opts.verbose)
-if version == "v1r3":
-	params_string = str_omicron_config_v1e3(
-		"%s", # will be filled in later with framecache
-		channels, 
-		samplefrequency=samplefrequency, 
-		chunkduration=chunkduration, 
-		blockduration=blockduration, 
-		overlapduration=overlapduration, 
-		windows=windows,
-		fftplan=fftplan,
-		frequencyrange=frequencyrange,
-		qrange=qrange, 
-		mismatch=mismatch, 
-		snrthreshold=snrthreshold, 
-		nmax=nmax, 
-		clustering=clustering, 
-		outputdir="%s",  # will be filled in later with outputdir
-		format=format, 
-		verbosity=verbosity, 
-		writepsd=writepsd, 
-		writetimeseries=writetimeseries, 
-		writewhiteneddata=writewhiteneddata,
-		plotstyle=plotstyle
-		)
+### output formatting
+format = eval(config.get("omicron","format"))
+verbosity = config.getint("omicron","verbosity")
+writepsd = config.getint("omicron","writepsd")
+writetimeseries = config.getint("omicron","writetimeseries")
+writewhiteneddata = config.getint("omicron","writewhiteneddata")
+plotstyle = config.get("omicron","plotstyle")
 
-	print "\n\n\tWARNING: not all v1r3 parameters are set. You may need to fix this...\n"
+### common run parameters
+chunkduration = config.getint("omicron","chunkduration")
+blockduration = config.getint("omicron","blockduration")
+overlapduration = config.getint("omicron","overlapduration")
+windows = eval(config.get("omicron","windows"))
+fftplan = config.get("omicron","fftplan")
 
-elif version == "v2r1":
-	params_string = str_omicron_config_v2r1(
-		"%s", # will be filled in later with framecache 
-		channels, 
-		samplefrequency=samplefrequency, 
-		chunkduration=chunkduration, 
-		segmentduration=blockduration, 
-		overlapduration=overlapduration, 
-		frequencyrange=frequencyrange, 
-		qrange=qrange, 
-		mismatch=mismatch, 
-		snrthreshold=snrthreshold,  
-		products="triggers", 
-		verbosity=verbosity, 
-		format=format, 
-		clustering=clustering,
-		outputdir="%s", # will be filled in later with outputdir
-		nmax=nmax, 
-		plotstyle=plotstyle
-		)
+duration = max(chunkduration, blockduration)
 
-	print "\n\n\tWARNING: not all v2r1 parameters are set, and not all v1r3 parameters are used in v2r1. You may need to fix this...\n"
+### set up params template for each channel_set
+params_strings = []
+for section_name in sorted(config.options("channel sets")):
+	report("setting up template omicron params file for version : %s"%version, opts.verbose)
 
-else:
-	raise ValueError("do not know how to set up Omicron params file for version : %s"%version)
+	### run parameters
+	samplefrequency = config.getint(section_name,"samplefrequency")
+
+	frequencyrange = eval(config.get(section_name,"frequencyrange"))
+	qrange = eval(config.get(section_name,"qrange"))
+	mismatch = config.getfloat(section_name,"mismatch")
+	snrthreshold = config.getfloat(section_name,"snrthreshold")
+	nmax = config.getint(section_name,"nmax")
+	clustering = config.get(section_name,"clustering")
+
+	channels = dict( ("%s1:%s"%(ifo,key.upper()), float(value)) for key, value in config.items("%s channels"%section_name) )
+
+	if version == "v1r3":
+		params_strings.append( (section_name,
+ 			str_omicron_config_v1e3(
+				"%s", # will be filled in later with framecache
+				channels, 
+				samplefrequency=samplefrequency, 
+				chunkduration=chunkduration, 
+				blockduration=blockduration, 
+				overlapduration=overlapduration, 
+				windows=windows,
+				fftplan=fftplan,
+				frequencyrange=frequencyrange,
+				qrange=qrange, 
+				mismatch=mismatch, 
+				snrthreshold=snrthreshold, 
+				nmax=nmax, 
+				clustering=clustering, 
+				outputdir="%s",  # will be filled in later with outputdir
+				format=format, 
+				verbosity=verbosity, 
+				writepsd=writepsd, 
+				writetimeseries=writetimeseries, 
+				writewhiteneddata=writewhiteneddata,
+				plotstyle=plotstyle
+				) 
+			) )
+
+		print "\n\n\tWARNING: not all v1r3 parameters are set. You may need to fix this...\n"
+
+	elif version == "v2r1":
+		params_strings.append( (section_name, 
+			str_omicron_config_v2r1(
+				"%s", # will be filled in later with framecache 
+				channels, 
+				samplefrequency=samplefrequency, 
+				chunkduration=chunkduration, 
+				segmentduration=blockduration, 
+				overlapduration=overlapduration, 
+				frequencyrange=frequencyrange, 
+				qrange=qrange, 
+				mismatch=mismatch, 
+				snrthreshold=snrthreshold,  
+				products="triggers", 
+				verbosity=verbosity, 
+				format=format, 
+				clustering=clustering,
+				outputdir="%s", # will be filled in later with outputdir
+				nmax=nmax, 
+				plotstyle=plotstyle
+				) 
+			) )
+
+		print "\n\n\tWARNING: not all v2r1 parameters are set, and not all v1r3 parameters are used in v2r1. You may need to fix this...\n"
+
+	else:
+		raise ValueError("do not know how to set up Omicron params file for version : %s"%version)
 
 ### set up condor files if needed
 if condor:
@@ -593,7 +611,7 @@ while t < opts.gps_end:
 	logdir = "%s/logs/%s-%d/"%(outputdir, ifo, t5)
 	framedir = "%s/frames/%s-%d/"%(outputdir, ifo, t5)
 	trgdir = "%s/triggers/%s-%d/"%(outputdir, ifo, t5)
-	for directory in [outputdir, segdir, logdir, framedir, trgdir]:
+	for directory in [segdir, logdir, framedir, trgdir]:
         	if not os.path.exists(directory):
 			report("building directory : %s"%directory, opts.verbose)
                 	os.makedirs(directory)
@@ -606,8 +624,6 @@ while t < opts.gps_end:
 	
 	### find frames within time window
 	report("finding frames within stride", opts.verbose)
-#	frames = find_frames(ldr_server, ldr_url_type, ldr_type, ifo, t-padding, stride+2*padding, verbose=opts.verbose) 
-#	covered = coverage( frames, t-padding, stride+2*padding) ### find out the coverage
 	if opts.shared_mem:
 		frames = shm_find_frames(shmdir, ifo, ldr_type, t-padding, duration+twopadding, verbose=opts.verbose)
 	else:
@@ -619,15 +635,12 @@ while t < opts.gps_end:
 	if covered < 1.0:
 		report("coverage = %.5f < 1.0, we'll check every second for more frames and wait at most %d seconds before proceeding."%(covered, max_wait), opts.verbose)
 
-#	while (covered < 1.0) and ( (float(gpstime.gps_time_now()) - ( (t+stride+padding) + delay ) ) < max_wait ):
 	while (covered < 1.0) and ( (float(gpstime.gps_time_now()) - ( (t+duration+twopadding) + delay ) ) < max_wait ):
 
 		###
 		time.sleep( 1 ) # don't break the file system
 		###
 
-#		frames = find_frames(ldr_server, ldr_url_type, ldr_type, ifo, t-padding, stride+2*padding, verbose=False) ### don't report this every time in the loop
-#		covered = coverage( frames, t-padding, stride+2*padding) ### find out the coverage
 		if opts.shared_mem:
 			frames = shm_find_frames(shmdir, ifo, ldr_type, t-padding, duration+twopadding, verbose=opts.verbose)
 		else:
@@ -641,7 +654,6 @@ while t < opts.gps_end:
 		report("coverage = %.5f < 1.0, but we've timed out after waiting at least %d seconds."%(covered, max_wait), opts.verbose)
 
 	### write framecache
-#	framecache = "%s/%s_%d-%d.lcf"%(framedir, ifo, t, stride)
 	framecache = "%s/%s_%d-%d.lcf"%(framedir, ifo, t-padding, duration+twopadding)
 	report("writing framecache : %s"%framecache, opts.verbose)
 
@@ -655,16 +667,13 @@ while t < opts.gps_end:
 
 	else:
 		### find scisegs
-#		segfile = "%s/%s_%d-%d.seg"%(segdir, ifo, t, stride)
 		segfile = "%s/%s_%d-%d.seg"%(segdir, ifo, t-padding, duration+twopadding)
 		if scisegs: ### extract from ODC vector in frames
 			report("extracting scisegs to : %s"%(segfile), opts.verbose)
-#			segs = extract_scisegs(frames, "%s1:%s"%(ifo, sciseg_channel), sciseg_bitmask, t-padding, stride+twopadding)
 			segs = extract_scisegs(frames, "%s1:%s"%(ifo, sciseg_channel), sciseg_bitmask, t-padding, duration+twopadding)
 
 		else: ### use entire segment for analysis
 			report("using analysis segment as scisegs", opts.verbose)
-#			segs = [(t-padding, t+stride+twopadding)]
 			segs = [(t-padding, t+duration+twopadding)]
 
 		report("writing scisegs : %s"%segfile, opts.verbose)
@@ -673,68 +682,100 @@ while t < opts.gps_end:
 			file_obj.write("%d %d"%(a, b))
 		file_obj.close()
 
-		### write omicron params file
-#		params = "%s/%s_%d-%d.params"%(logdir, ifo, t, stride)
-		params = "%s/%s_%d-%d.params"%(logdir, ifo, t-padding, duration+twopadding)
-		report("writing params : %s"%params, opts.verbose)
-
-		file_obj = open(params, 'w')
-		file_obj.write(params_string%(framecache, trgdir))
-		file_obj.close()
-
 		### launch jobs
-	
 		if block: ### run from here and block
-			cmd = "%s %s %s"%(executable, segfile, params)
-			report(cmd, opts.verbose)
+			procs = []
+			for channel_set, params_string in params_strings:
+				report("channel_set : %s"%channel_set, opts.verbose)
 
-			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, duration+twopadding)
-			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, duration+twopadding)
+				### write omicron params file
+				params = "%s/%s_%s-%d-%d.params"%(logdir, ifo, channel_set, t-padding, duration+twopadding)
+				report("\twriting params : %s"%params, opts.verbose)
 
-			report("out: %s"%out, opts.verbose)
-			report("err: %s"%err, opts.verbose)
+				file_obj = open(params, 'w')
+				file_obj.write(params_string%(framecache, trgdir))
+				file_obj.close()
 
-			out_obj = open(out, "w")
-			err_obj = open(err, "w")
-#			p = sp.Popen(cmd.split(), stdout=sys.stdout, stderr=sys.stderr)
-			p = sp.Popen(cmd.split(), stdout=out_obj, stderr=err_obj)
-			out_obj.close()
-			err_obj.close()
-			p.wait() ### block!
+				cmd = "%s %s %s"%(executable, segfile, params)
+				report("\t%s"%cmd, opts.verbose)
+
+				out = "%s/%s_%s-%d-%d.out"%(logdir, ifo, channel_set, t-padding, duration+twopadding)
+				err = "%s/%s_%s-%d-%d.err"%(logdir, ifo, channel_set, t-padding, duration+twopadding)
+
+				report("\tout: %s"%out, opts.verbose)
+				report("\terr: %s"%err, opts.verbose)
+
+				out_obj = open(out, "w")
+				err_obj = open(err, "w")
+				procs.append( (cmd, sp.Popen(cmd.split(), stdout=out_obj, stderr=err_obj)) )
+				out_obj.close()
+				err_obj.close()
+
+			while procs:
+				cmd, p = procs.pop(0)
+				p.wait() ### block!
 			
 		elif condor: ### run under condor
-			log = "%s/%s_%d-%d.log"%(logdir, ifo, t-padding, duration+twopadding)
-			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, duration+twopadding)
-			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, duration+twopadding)
+			procs = []
+			for channel_set, params_string in params_sgrings:
+				report("channel_set : %s"%channel_set, opts.verbose)
+
+				### write omicron params file
+				params = "%s/%s_%s-%d-%d.params"%(logdir, ifo, channel_set, t-padding, duration+twopadding)
+				report("\twriting params : %s"%params, opts.verbose)
+
+				file_obj = open(params, 'w')
+				file_obj.write(params_string%(framecache, trgdir))
+				file_obj.close()
+
+				log = "%s/%s_%s-%d-%d.log"%(logdir, ifo, channel_set, t-padding, duration+twopadding)
+				out = "%s/%s_%s-%d-%d.out"%(logdir, ifo, channel_set, t-padding, duration+twopadding)
+				err = "%s/%s_%s-%d-%d.err"%(logdir, ifo, channel_set, t-padding, duration+twopadding)
 			
-			sub = "%s/%s_%d-%d.sub"%(condordir, ifo, t-padding, duration+twopadding)
+				sub = "%s/%s_%s-%d-%d.sub"%(condordir, ifo, channel_set, t-padding, duration+twopadding)
 
-			report("sub: %s"%sub, opts.verbose)
-			report("log: %s"%log, opts.verbose)
-			report("out: %s"%out, opts.verbose)
-			report("err: %s"%err, opts.verbose)
+				report("\tsub: %s"%sub, opts.verbose)
+				report("\tlog: %s"%log, opts.verbose)
+				report("\tout: %s"%out, opts.verbose)
+				report("\terr: %s"%err, opts.verbose)
 
-			### write sub
-			file_obj = open(sub, "w")
-			file_obj.write(sub_string%(segfile, params, log, out, err))
-			file_obj.close()
+				### write sub
+				file_obj = open(sub, "w")
+				file_obj.write(sub_string%(segfile, params, log, out, err))
+				file_obj.close()
 
-			### submit through condor
-			cmd = "condor_submit %s"%sub
-			report(cmd, opts.verbose)
+				### submit through condor
+				cmd = "condor_submit %s"%sub
+				report("\t%s"%cmd, opts.verbose)
+	
+				procs.append( (cmd, sp.Popen(cmd.split(), stdout=sys.stdout, stderr=sys.stderr)) )
 
-			p = sp.Popen(cmd.split(), stdout=sys.stdout, stderr=sys.stderr)
-			p.wait()
+			while procs:
+				cmd, p = procs.pop(0)
+				p.wait()
 
 		else: ### run from here but do not block
-			out = "%s/%s_%d-%d.out"%(logdir, ifo, t-padding, duration+twopadding)
-			err = "%s/%s_%d-%d.err"%(logdir, ifo, t-padding, duration+twopadding)
-			cmd = "%s %s %s"%(executable, segfile, params)
-			report(cmd, opts.verbose)
-			report("out: %s"%out, opts.verbose)
-			report("err: %s"%err, opts.verbose)
+			for channel_set, params_string in params_strings:
+				report("channel_set : %s"%channel_set, opts.verbose)
 
-			safe_fork(cmd.split(), stdout=out, stderr=err)
+				### write omicron params file
+				params = "%s/%s_%s-%d-%d.params"%(logdir, ifo, channel_set, t-padding, duration+twopadding)
+				report("\twriting params : %s"%params, opts.verbose)
+
+				file_obj = open(params, 'w')
+				file_obj.write(params_string%(framecache, trgdir))
+				file_obj.close()
+
+				cmd = "%s %s %s"%(executable, segfile, params)
+				report("\t%s"%cmd, opts.verbose)
+
+				out = "%s/%s_%s-%d-%d.out"%(logdir, ifo, channel_set, t-padding, duration+twopadding)
+				err = "%s/%s_%s-%d-%d.err"%(logdir, ifo, channel_set, t-padding, duration+twopadding)
+
+				report("\tout: %s"%out, opts.verbose)
+				report("\terr: %s"%err, opts.verbose)
+
+				safe_fork(cmd.split(), stdout=out, stderr=err)
 
 	report("Done with stride: [%d-%d, %d+%d]"%(t, padding, t+stride, padding), opts.verbose)
 
