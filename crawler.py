@@ -244,7 +244,7 @@ def check_seg(seg, window=None):
 
 	
 ###
-def str_omicron_config_v1e3(framecache, channels, samplefrequency=4096, chunkduration=32, blockduration=32, overlapduration=4, windows=[2,4], fftplan="ESTIMATE", frequencyrange=[32,2048], qrange=[3,141], mismatch=0.2, snrthreshold=5.5, nmax=None, clustering="time", outputdir="./", format=["xml"], verbosity=0, writepsd=0, writetimeseries=0, writewhiteneddata=0, plotstyle="GWOLLUM"):
+def str_omicron_config_v1e3(framecache, channels, samplefrequency=4096, chunkduration=32, blockduration=32, overlapduration=4, windows=[2,4], fftplan="ESTIMATE", frequencyrange=[32,2048], qrange=[3,141], mismatch=0.2, snrthreshold=5.5, nmax=None, clustering=None, outputdir="./", format=["xml"], verbosity=0, writepsd=0, writetimeseries=0, writewhiteneddata=0, plotstyle="GWOLLUM"):
 	"""
 	builds the string that represents the omicron parameter file
 	WARNING: may be sub-optimal if required extremely repetitively because of the way we concatenate strings
@@ -275,7 +275,8 @@ def str_omicron_config_v1e3(framecache, channels, samplefrequency=4096, chunkdur
 	s += "TRIGGER\tSNRTHRESHOLD\t%.4f\n"%snrthreshold
 	if nmax != None:
 		s += "TRIGGER\tNMAX\t%d\n"%int(nmax)
-	s += "TRIGGER\tCLUSTERING\t%s\n"%clustering
+        if clustering!=None:
+		s += "TRIGGER\tCLUSTERING\t%s\n"%clustering
 
 	### output
 	s += "OUTPUT\tDIRECTORY\t%s\n"%outputdir
@@ -289,7 +290,7 @@ def str_omicron_config_v1e3(framecache, channels, samplefrequency=4096, chunkdur
 	return s
 
 ###
-def str_omicron_config_v2r1(framecache, channels, samplefrequency=4096, chunkduration=32, segmentduration=32, overlapduration=4, frequencyrange=[32,2048], qrange=[3,141], mismatch=0.2, snrthreshold=5.5,  outputdir="./", products="triggers", verbosity=0, format=["xml"], clustering="TIME", nmax=None, plotstyle="GWOLLUM"):
+def str_omicron_config_v2r1(framecache, channels, samplefrequency=4096, chunkduration=32, segmentduration=32, overlapduration=4, frequencyrange=[32,2048], qrange=[3,141], mismatch=0.2, snrthreshold=5.5,  outputdir="./", products="triggers", verbosity=0, format=["xml"], clustering=None, nmax=None, plotstyle="GWOLLUM"):
 	"""
 	builds the string that represents the omicron parameter file
 	WARNING: may be sub-optimal if required extremly repetitively because of the way we concatenate strings
@@ -314,7 +315,8 @@ def str_omicron_config_v2r1(framecache, channels, samplefrequency=4096, chunkdur
 	s += "PARAMETER\tQRANGE\t%.4f\t%.4f\n"%tuple(qrange)
 	s += "PARAMETER\tMISMATCHMAX\t%.4f\n"%mismatch
 	s += "PARAMETER\tSNRTHRESHOLD\t%.4f\n"%snrthreshold
-	s += "PARAMETER\tCLUSTERING\t%s\n"%clustering
+        if clustering!=None:
+    		s += "PARAMETER\tCLUSTERING\t%s\n"%clustering
 	s += "PARAMETER\tTILEDOWN\t0\n" ### never use tiledown... don't know what the "tiledown algorithm" is
 	s += "PARAMETER\tSNRSCALE\t50\n" ### upper ylimit for plots we don't produce...
 
