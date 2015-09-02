@@ -514,7 +514,10 @@ for section_name in sorted(config.options("channel sets")):
 	mismatch = config.getfloat(section_name,"mismatch")
 	snrthreshold = config.getfloat(section_name,"snrthreshold")
 	nmax = config.getint(section_name,"nmax")
-	clustering = config.get(section_name,"clustering")
+	if config.has_option(section_name,"clustering"):
+		clustering = config.get(section_name,"clustering")
+	else:
+		clustering = None
 
 	channels = dict( ("%s1:%s"%(ifo,key.upper()), float(value)) for key, value in config.items("%s channels"%section_name) )
 
