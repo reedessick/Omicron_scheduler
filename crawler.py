@@ -129,7 +129,7 @@ def coverage(frames, start, stride):
 	assumes non-overlapping frames!
 	"""
 	### generate segments from frame names
-	segs = [[float(l) for l in frame.strip(".gwf").split("-")[-2:]] for frame in sorted(frames)]
+#	segs = [[float(l) for l in frame.strip(".gwf").split("-")[-2:]] for frame in sorted(frames)]
 	segs = [extract_start_dur(frame) for frame in sorted(frames)]
 
 	### check whether segments overlap with desired time range
